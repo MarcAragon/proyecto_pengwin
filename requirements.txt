@@ -1,0 +1,31 @@
+# Proyecto PENGWIN — dependencias (Python 3.12)
+# Versiones exactas del entorno con el que se ejecutaron el notebook y el script.
+#
+#   py -3.12 -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
+#
+# Lectura de volúmenes, cálculo y tablas
+simpleitk==2.5.6
+numpy==2.5.2
+scipy==1.18.1
+pandas==3.0.5
+pyarrow==25.0.1
+
+# Figuras; Plotly para el visualizador interactivo (usa Pillow para codificar los fotogramas)
+matplotlib==3.11.2
+plotly==7.1.0
+pillow==12.3.0
+
+# Kernel de Jupyter y ejecución desatendida del notebook con nbconvert
+ipykernel==7.3.0
+nbconvert==7.17.1
+
+# Modelo (entrega #2): PyTorch con CUDA 13 (sus wheels están en el índice de PyTorch),
+# torchvision para los pesos de ImageNet y como oráculo del NMS, OpenCV para la
+# augmentación y scikit-learn para F1 y AUC
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch==2.14.0
+torchvision==0.29.0
+opencv-python-headless==5.0.0.93
+scikit-learn==1.9.1
