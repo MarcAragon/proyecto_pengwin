@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PENGWIN 2.5D · Fragmentos pélvicos</title>
+  <meta name="description" content="Detección, segmentación de instancia, clasificación y separación en milímetros de fragmentos óseos pélvicos en TC.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f2a44'/%3E%3Cpath d='M8 9c3 0 5 2 8 2s5-2 8-2c-1 6-3 9-8 13C11 18 9 15 8 9z' fill='%23eb6834'/%3E%3Ccircle cx='16' cy='13' r='3' fill='%232a78d6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/estilo.css">
+  <script src="/static/vendor/plotly.min.js" defer></script>
+  <script type="module" src="/static/js/app.js"></script>
+</head>
+<body>
+  <header class="cabecera">
+    <div class="cabecera__marca">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>Fragmentos óseos pélvicos en TC</h1>
+        <p>Sistema PENGWIN 2.5D · detección, segmentación de instancia, clasificación y separación en milímetros</p>
+      </div>
+    </div>
+    <div class="cabecera__estado" id="estado-servidor"><span class="punto"></span><span>Conectando…</span></div>
+  </header>
+
+  <div class="aviso" role="note">
+    <strong>Uso exclusivamente académico.</strong>
+    Este sistema no es un dispositivo médico, no ha sido validado clínicamente y no debe utilizarse para apoyar
+    decisiones quirúrgicas reales.
+  </div>
+
+  <main>
+    <!-- ============================================================ entrada -->
+    <section class="bloque" id="entrada">
+      <div class="bloque__titulo">
+        <h2>Analizar un estudio</h2>
+        <p>Sube una tomografía de pelvis en <code>.mha</code>, <code>.nii</code>, <code>.nii.gz</code> o <code>.nrrd</code>. El
+          servidor la orienta, la remuestrea a 1,5 mm, la pasa corte a corte por la red (cada corte con sus vecinos) y
+          reconstruye los fragmentos en 3D. Una TC de 300–400 MB tarda en subir lo que permita tu conexión; procesarla,
+          unos segundos.</p>
+        <details class="explicacion">
+          <summary>Qué hace la app con tu archivo</summary>
+          <ol>
+            <li><b>Lo sube en trozos de 16 MB comprimidos</b> en tu navegador, para que pase por el túnel aunque pese cientos de MB.</li>
+            <li><b>Lo valida</b>: que sea un volumen 3D, que sea una TC y no una máscara, que esté en unidades Hounsfield. Te avisa si
+              algo se sale de lo que vio el modelo (cortes gruesos, espaciados raros, campo pequeño).</li>
+            <li><b>Lo prepara</b> como los datos de entrenamiento: orientación LPS, vóxeles isotrópicos de 1,5 mm y un recorte de
+              256 × 256 (384 mm) centrado en el hueso.</li>
+            <li><b>Pasa cada corte por la red</b> junto con cuatro vecinos (±6 mm): una pila de 15 canales. La red detecta cada
+              región (sacro, coxal izquierdo, coxal derecho) con su caja, y separa sus fragmentos en dos etapas.</li>
+            <li><b>Enlaza los fragmentos en 3D</b> y mide la <b>separación de cada uno al fragmento principal de su hueso</b>, en mm,
+              con la transformada de distancia euclídea.</li>
+            <li>Si subiste la etiqueta, <b>compara con el ground truth</b>.</li>
+            <li>Prepara los <b>tres visualizadores</b>: la MIP del volumen crudo, el corte a corte con la separación escrita sobre
+              cada fragmento y la reconstrucción 3D.</li>
+          </ol>
+          <p class="nota">El modelo: 12,4 M de parámetros, arquitectura propia (tronco ResNet-18 con atención CBAM y tres
+            cabezas), entrenado con 70 pacientes de PENGWIN. En 15 pacientes de prueba que no vio: IoU de detección 0,884,
+            F1 de clasificación 0,994, Dice de fragmento 0,848.</p>
+        </details>
+      </div>
+
+      <div class="rejilla-entrada">
+        <div class="tarjeta">
+          <h3>Tu tomografía</h3>
+          <label class="soltar" id="soltar-imagen" tabindex="0">
+            <input type="file" id="archivo-imagen" accept=".mha,.nii,.gz,.nrrd" hidden>
+            <span class="soltar__icono" aria-hidden="true">⇪</span>
+            <span class="soltar__texto"><b>Elige la TC</b> o suéltala aquí</span>
+            <span class="soltar__archivo" id="nombre-imagen"></span>
+          </label>
+          <label class="soltar soltar--secundario" id="soltar-etiqueta" tabindex="0">
+            <input type="file" id="archivo-etiqueta" accept=".mha,.nii,.gz,.nrrd" hidden>
+            <span class="soltar__texto"><b>Etiqueta (opcional)</b> · su máscara de fragmentos, para comparar con el
+              ground truth</span>
+            <span class="soltar__archivo" id="nombre-etiqueta"></span>
+          </label>
+          <div class="fila-controles">
+            <div class="segmentado" id="dispositivo" role="radiogroup" aria-label="Dispositivo de inferencia"></div>
+            <button class="boton boton--primario" id="boton-analizar" disabled>Analizar</button>
+          </div>
+        </div>
+
+        <div class="tarjeta">
+          <h3>O prueba con un paciente de prueba</h3>
+          <p class="nota">Los 15 pacientes de la partición de prueba: el modelo no los vio al entrenar ni al elegir nada.
+            Se analizan con su etiqueta, así que verás también la comparación con el ground truth.</p>
+          <div class="demos" id="demos"><span class="nota">Cargando…</span></div>
+        </div>
+      </div>
+
+      <div class="tarjeta progreso" id="progreso" hidden>
+        <div class="progreso__cabecera">
+          <h3 id="progreso-titulo">Procesando</h3>
+          <span id="progreso-tiempo" class="nota"></span>
+        </div>
+        <div class="barra"><div class="barra__relleno" id="progreso-barra"></div></div>
+        <ol class="etapas" id="etapas"></ol>
+        <p class="error" id="progreso-error" hidden></p>
+      </div>
+    </section>
+
+    <!-- ============================================================ resultados -->
+    <section class="bloque" id="resultados" hidden>
+      <div class="bloque__titulo bloque__titulo--fila">
+        <div>
+          <h2 id="resultado-titulo">Resultado</h2>
+          <p id="resultado-subtitulo" class="nota"></p>
+        </div>
+        <div class="descargas">
+          <a class="boton" id="descarga-mha" download>Segmentación .mha</a>
+          <a class="boton" id="descarga-csv" download>Fragmentos .csv</a>
+        </div>
+      </div>
+
+      <ul class="avisos" id="avisos" hidden></ul>
+      <div class="kpis" id="kpis"></div>
+
+      <nav class="pestanas" role="tablist" id="pestanas">
+        <button role="tab" data-panel="panel-v1" aria-selected="true">1 · Volumen crudo</button>
+        <button role="tab" data-panel="panel-v2">2 · Corte a corte</button>
+        <button role="tab" data-panel="panel-v3">3 · Reconstrucción 3D</button>
+        <button role="tab" data-panel="panel-fragmentos">Fragmentos</button>
+        <button role="tab" data-panel="panel-evaluacion" id="pestana-evaluacion" hidden>Frente al ground truth</button>
+        <button role="tab" data-panel="panel-ficha">Ficha técnica</button>
+      </nav>
+
+      <!-- Visualizador 1 -->
+      <div class="panel" id="panel-v1" role="tabpanel">
+        <div class="visor visor--v1">
+          <div class="lienzo-oscuro" id="v1-contenedor"><canvas id="v1-lienzo"></canvas>
+            <span class="lienzo__rotulo" id="v1-rotulo"></span></div>
+          <aside class="controles">
+            <h3>Reconstrucción 3D inicial (MIP)</h3>
+            <p class="nota">Proyección de máxima intensidad del volumen <b>original</b> —resolución nativa, solo
+              orientado—, girando alrededor del eje craneocaudal y sin la camilla. Solo se ve lo que supera el umbral en
+              unidades Hounsfield: es preprocesado clásico, el modelo no interviene. Arrastra sobre la imagen para girarla.</p>
+            <label class="control">Giro <output id="v1-angulo-txt">0°</output>
+              <input type="range" id="v1-angulo" min="0" max="35" value="0"></label>
+            <label class="control">Umbral <output id="v1-umbral-txt">250 HU</output>
+              <input type="range" id="v1-umbral" min="100" max="700" step="10" value="250"></label>
+            <div class="fila-controles">
+              <button class="boton" id="v1-play">▶ Girar</button>
+              <button class="boton boton--suave" id="v1-defecto">250 HU</button>
+            </div>
+            <p class="nota">Con 100 HU aparece tejido blando; por encima de 400 HU se pierde el hueso trabecular. 250 HU
+              deja el esqueleto nítido.</p>
+          </aside>
+        </div>
+      </div>
+
+      <!-- Visualizador 2 -->
+      <div class="panel" id="panel-v2" role="tabpanel" hidden>
+        <div class="visor visor--v2">
+          <div class="v2-lienzos" id="v2-lienzos">
+            <figure class="lienzo-oscuro"><canvas id="v2-lienzo"></canvas><figcaption id="v2-pie">Predicción</figcaption></figure>
+            <figure class="lienzo-oscuro" id="v2-figura-real" hidden><canvas id="v2-lienzo-real"></canvas><figcaption>Etiqueta real</figcaption></figure>
+          </div>
+          <aside class="controles">
+            <h3>Inferencia corte a corte</h3>
+            <div class="segmentado segmentado--pequeno" id="v2-plano" role="radiogroup" aria-label="Plano">
+              <button data-valor="axial" aria-pressed="true">Axial</button>
+              <button data-valor="coronal">Coronal</button>
+              <button data-valor="sagital">Sagital</button>
+            </div>
+            <label class="control">Corte <output id="v2-corte-txt"></output>
+              <input type="range" id="v2-corte" min="0" max="0" value="0"></label>
+            <div class="fila-controles fila-controles--botones">
+              <button class="boton boton--suave" id="v2-anterior" aria-label="Corte anterior">◀</button>
+              <button class="boton boton--suave" id="v2-siguiente" aria-label="Corte siguiente">▶</button>
+              <button class="boton boton--suave" id="v2-centro">Centro de la pelvis</button>
+            </div>
+            <label class="control">Opacidad de las máscaras <output id="v2-alfa-txt">50 %</output>
+              <input type="range" id="v2-alfa" min="0" max="100" value="50"></label>
+            <div class="interruptores">
+              <label><input type="checkbox" id="v2-cajas" checked> Cajas de detección</label>
+              <label><input type="checkbox" id="v2-rotulos" checked> Separación sobre cada fragmento</label>
+              <label><input type="checkbox" id="v2-encuadre" checked> Encuadrar la pelvis</label>
+              <label id="v2-real-opcion" hidden><input type="checkbox" id="v2-real"> Etiqueta real al lado</label>
+            </div>
+            <div class="leyenda" id="v2-leyenda"></div>
+            <div class="nota" id="v2-info"></div>
+          </aside>
+        </div>
+      </div>
+
+      <!-- Visualizador 3 -->
+      <div class="panel" id="panel-v3" role="tabpanel" hidden>
+        <div class="visor visor--v3">
+          <div class="v3-grafico" id="v3-grafico"></div>
+          <aside class="controles">
+            <h3>Reconstrucción 3D final</h3>
+            <p class="nota">Las máscaras predichas apiladas en 3D, una malla por fragmento (<i>marching cubes</i>) con el color
+              de su hueso y su separación al principal. Gira con el ratón o con el dedo.</p>
+            <div class="segmentado segmentado--pequeno" id="v3-fuente" role="radiogroup" aria-label="Qué mostrar" hidden>
+              <button data-valor="pred" aria-pressed="true">Predicción</button>
+              <button data-valor="real">Etiqueta real</button>
+            </div>
+            <div class="interruptores">
+              <label><input type="checkbox" id="v3-rotulos" checked> Rótulos con la separación</label>
+              <label><input type="checkbox" id="v3-transparente"> Principales semitransparentes</label>
+            </div>
+            <div class="fila-controles">
+              <button class="boton boton--suave" data-vista="frente">Frente</button>
+              <button class="boton boton--suave" data-vista="atras">Atrás</button>
+              <button class="boton boton--suave" data-vista="arriba">Arriba</button>
+              <button class="boton boton--suave" data-vista="lado">Lateral</button>
+            </div>
+            <div class="leyenda" id="v3-leyenda"></div>
+          </aside>
+        </div>
+      </div>
+
+      <!-- Tabla de fragmentos -->
+      <div class="panel" id="panel-fragmentos" role="tabpanel" hidden>
+        <p class="nota">Los fragmentos 3D que reconstruye el sistema. La separación es la distancia mínima borde a borde, en
+          milímetros, de cada fragmento al <b>principal</b> de su hueso (el de mayor volumen), con la transformada de
+          distancia euclídea sobre la rejilla isotrópica de 1,5 mm. 1,5 mm —un vóxel— significa <b>en contacto</b>.
+          Pulsa una fila para verla en el visualizador 2.</p>
+        <div class="tabla-envoltura"><table class="tabla" id="tabla-fragmentos"></table></div>
+      </div>
+
+      <!-- Evaluación -->
+      <div class="panel" id="panel-evaluacion" role="tabpanel" hidden>
+        <p class="nota">Las métricas de <b>este paciente</b> frente a la etiqueta subida, con las definiciones del notebook. Las
+          del conjunto de prueba completo están en el model card.</p>
+        <div class="kpis" id="kpis-evaluacion"></div>
+        <h3>Separación: predicción frente a ground truth</h3>
+        <div class="tabla-envoltura"><table class="tabla" id="tabla-evaluacion"></table></div>
+      </div>
+
+      <!-- Ficha técnica -->
+      <div class="panel" id="panel-ficha" role="tabpanel" hidden>
+        <div class="rejilla-ficha" id="ficha"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="pie">
+    <p><b>Uso exclusivamente académico</b> · no es un dispositivo médico. Proyecto PENGWIN · Marco Aragon, Juan David Reyes,
+      Maria Paula Pinillo, María José Suárez Toro y Laura Astudillo. Datos: PENGWIN Task 1 (CT), MICCAI 2024 · Zenodo
+      10927452 · CC-BY 4.0.</p>
+  </footer>
+</body>
+</html>
