@@ -1,0 +1,32 @@
+{
+  "modelo": "modelo_final_25d.pth",
+  "desplazamientos": [
+    -4,
+    -2,
+    0,
+    2,
+    4
+  ],
+  "compuerta": true,
+  "umbral_centro": 0.3,
+  "enlace": "parejas + una pieza conexa",
+  "umbral_mm3": 1600.0,
+  "casos_prueba": [
+    "004",
+    "005",
+    "008",
+    "009",
+    "019",
+    "025",
+    "027",
+    "031",
+    "036",
+    "038",
+    "068",
+    "073",
+    "080",
+    "095",
+    "100"
+  ],
+  "origen": "pengwin_desarrollo.ipynb: 3.3 (pila de cortes), 4.1 (decodificación), 4.6 (enlace 3D) y 1.13 (umbral de volumen)"
+}
